@@ -11,7 +11,7 @@ const query = new URLSearchParams(location.search);
 const state = {
   account: '', contract: configuredAddress(), verified: false,
   sessionId: validSessionId(query.get('s')) ? query.get('s') : '',
-  session: null, rounds: [], sessions: [], tab: 'mission',
+  session: null, rounds: [], sessions: [], sessionsCursor: 0n, sessionsHasMore: false, tab: 'mission',
   busy: false, pending: pendingAction(), notice: '', error: '',
   modal: null, plan: '', mode: 'SOLO', guest: '', addressInput: '',
 };
@@ -99,7 +99,7 @@ function renderSession() {
 }
 
 function renderHangar() {
-  return `<section class="hangar"><div class="section-heading"><span class="eyebrow">CREW MANIFEST</span><h1>My missions</h1><p>Your confirmed solo and crew missions on Studionet.</p></div>${!state.account ? `<div class="empty"><h3>Connect to see your missions.</h3>${button('Connect wallet ↗', 'connect', 'class="primary"')}</div>` : !state.verified ? `<div class="empty">Verify a LastLight contract to load missions.</div>` : !state.sessions.length ? `<div class="empty"><h3>No missions yet.</h3><p>Start a new Kestrel run or open a crew invitation.</p>${button('Start mission ↗', 'tab-mission', 'class="primary"')}</div>` : `<div class="session-list">${state.sessions.map(s => `<button type="button" data-action="open-session" data-id="${esc(s.id)}"><span><small>${esc(s.mode)} · ${esc(s.id.slice(0, 10).toUpperCase())}</small><strong>${esc(statusLabel(s.status))}</strong></span><span>ROUND ${Math.min(3, s.next_round_index + 1)} / 3 <b>↗</b></span></button>`).join('')}</div>`}</section>`;
+  return `<section class="hangar"><div class="section-heading"><span class="eyebrow">CREW MANIFEST</span><h1>My missions</h1><p>Your confirmed solo and crew missions on Studionet.</p></div>${!state.account ? `<div class="empty"><h3>Connect to see your missions.</h3>${button('Connect wallet ↗', 'connect', 'class="primary"')}</div>` : !state.verified ? `<div class="empty">Verify a LastLight contract to load missions.</div>` : !state.sessions.length ? `<div class="empty"><h3>No missions yet.</h3><p>Start a new Kestrel run or open a crew invitation.</p>${button('Start mission ↗', 'tab-mission', 'class="primary"')}</div>` : `<div class="session-list">${state.sessions.map(s => `<button type="button" data-action="open-session" data-id="${esc(s.id)}"><span><small>${esc(s.mode)} · ${esc(s.id.slice(0, 10).toUpperCase())}</small><strong>${esc(statusLabel(s.status))}</strong></span><span>ROUND ${Math.min(3, s.next_round_index + 1)} / 3 <b>↗</b></span></button>`).join('')}</div>${state.sessionsHasMore ? button('Load more missions ↓', 'load-more', `class="ghost" ${state.busy ? 'disabled' : ''}`) : ''}`}</section>`;
 }
 
 function renderRules() {
@@ -118,6 +118,30 @@ function render() {
 
 function message(value, kind = 'notice') { state.error = kind === 'error' ? value : ''; state.notice = kind === 'notice' ? value : ''; render(); }
 
+async function loadSessionPage(reset = false) {
+  if (!state.account) {
+    state.sessions = [];
+    state.sessionsCursor = 0n;
+    state.sessionsHasMore = false;
+    return;
+  }
+  const cursor = reset ? 0n : state.sessionsCursor;
+  const page = await read(state.contract, 'list_sessions', [state.account, cursor, 20n], state.account);
+  const items = Array.isArray(page?.items) ? page.items : [];
+  const nextCursor = BigInt(page?.next_cursor ?? cursor + BigInt(items.length));
+  if (nextCursor < cursor || (page?.has_more && nextCursor === cursor)) {
+    throw new Error('The mission list returned an invalid pagination cursor.');
+  }
+  if (reset) {
+    state.sessions = items;
+  } else {
+    const existing = new Set(state.sessions.map(session => session.id));
+    state.sessions.push(...items.filter(session => !existing.has(session.id)));
+  }
+  state.sessionsCursor = nextCursor;
+  state.sessionsHasMore = Boolean(page?.has_more);
+}
+
 async function refresh() {
   if (!validAddress(state.contract)) { state.verified = false; render(); return; }
   try {
@@ -128,10 +152,7 @@ async function refresh() {
       state.rounds = [];
       for (let i = 0; i < Math.min(3, Number(state.session.next_round_index)); i++) state.rounds.push(await read(state.contract, 'get_round', [state.sessionId, BigInt(i)], state.account || undefined));
     }
-    if (state.account) {
-      const page = await read(state.contract, 'list_sessions', [state.account, 0n, 20n], state.account);
-      state.sessions = page.items || [];
-    }
+    await loadSessionPage(true);
     state.error = '';
   } catch (error) {
     state.verified = false;
@@ -226,6 +247,14 @@ async function act(action, target) {
   if (action === 'connect') return connect();
   if (action === 'home' || action === 'tab-mission') { state.tab = 'mission'; render(); return; }
   if (action === 'tab-hangar') { state.tab = 'hangar'; await refresh(); return; }
+  if (action === 'load-more') {
+    if (state.busy || !state.sessionsHasMore) return;
+    state.busy = true; state.error = ''; render();
+    try { await loadSessionPage(); }
+    catch (error) { state.error = safeError(error); }
+    finally { state.busy = false; render(); }
+    return;
+  }
   if (action === 'tab-rules') { state.tab = 'rules'; render(); return; }
   if (action === 'open-create') { document.querySelector('#create')?.scrollIntoView({ behavior: 'smooth' }); return; }
   if (action === 'mode-solo' || action === 'mode-duo') { state.mode = action === 'mode-solo' ? 'SOLO' : 'DUO'; render(); return; }
@@ -303,7 +332,7 @@ app.addEventListener('input', event => {
   if (event.target.id === 'contract-address') state.addressInput = event.target.value;
   if (event.target.id === 'confirm-box') document.querySelector('#modal-confirm').disabled = !event.target.checked;
 });
-getProvider()?.on?.('accountsChanged', accounts => { state.account = accounts?.[0] || ''; state.verified = false; state.session = null; state.sessions = []; refresh(); });
+getProvider()?.on?.('accountsChanged', accounts => { state.account = accounts?.[0] || ''; state.verified = false; state.session = null; state.sessions = []; state.sessionsCursor = 0n; state.sessionsHasMore = false; refresh(); });
 getProvider()?.on?.('chainChanged', () => { state.verified = false; state.session = null; refresh(); });
 
 render();
