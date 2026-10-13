@@ -1,0 +1,50 @@
+{
+  "rulesVersion": "lastlight-1",
+  "missionId": "kestrel-01",
+  "initial": {"oxygen": 60, "power": 60, "hull": 80},
+  "oxygenCost": 12,
+  "limits": {"minPlanBytes": 40, "maxPlanBytes": 1200},
+  "adjustments": {
+    "SUCCESS": {"oxygen": 8, "power": 3, "hull": 0},
+    "PARTIAL": {"oxygen": 0, "power": 0, "hull": -8},
+    "FAIL": {"oxygen": -12, "power": -4, "hull": -20}
+  },
+  "rounds": [
+    {
+      "id": "intake",
+      "sector": "Life support",
+      "title": "A station running out of breath.",
+      "summary": "A debris strike has jammed the oxygen intake. The reserve supply is keeping the crew alive. Restore the intake without venting the remaining air.",
+      "facts": "The blockage is reachable after the intake is isolated. A manual handwheel controls the intake. The pressure gauge works. The reserve oxygen supply remains available during the repair.",
+      "equipment": ["Toolkit", "Manual handwheel", "Isolation switch", "Pressure gauge"],
+      "constraints": "Use only the stated equipment and ordinary actions. Do not vent the station, disable reserve oxygen, invent additional equipment, or assume automatic repairs.",
+      "criteria": ["Isolate the intake before working on it.", "Clear the obstruction and operate the manual handwheel.", "Check pressure before restoring normal flow."],
+      "powerCost": 8,
+      "example": "I isolate the jammed intake while leaving reserve oxygen running. I clear the obstruction with the toolkit and turn the manual handwheel to reopen the intake. I check the pressure gauge before restoring normal flow."
+    },
+    {
+      "id": "coolant",
+      "sector": "Engineering",
+      "title": "Keep the core from overheating.",
+      "summary": "A damaged branch in the coolant loop is leaking. Repair the branch while the reserve loop keeps the station core stable.",
+      "facts": "The damaged branch has a working isolation valve. The reserve loop is separate and must remain on. The supplied patch kit can seal this specific leak when the branch is isolated. Pressure and temperature monitors work.",
+      "equipment": ["Isolation valve", "Patch kit", "Restart control", "Pressure / temperature monitors"],
+      "constraints": "Use only the stated equipment and ordinary actions. Keep the reserve loop active. Do not patch the branch while it is pressurized or invent replacement components.",
+      "criteria": ["Isolate the damaged branch while keeping the reserve loop active.", "Seal the isolated leak using the patch kit.", "Restart gradually while checking pressure and temperature."],
+      "powerCost": 12,
+      "example": "I leave the reserve loop running and isolate the damaged branch with its valve. Once the branch is isolated, I seal the leak with the patch kit. I restart the repaired branch gradually while watching both pressure and temperature."
+    },
+    {
+      "id": "beacon",
+      "sector": "Communications",
+      "title": "Make sure someone hears you.",
+      "summary": "The rescue beacon has lost its antenna feed. Restore a safe connection and transmit a complete distress packet before the crew's reserves fall further.",
+      "facts": "The beacon and antenna work; only the main connecting cable is damaged. An intact backup cable is available. A switch can isolate the damaged feed. The navigation display provides station ID KESTREL and its current coordinates. The receiver can check for acknowledgement.",
+      "equipment": ["Feed isolation switch", "Backup cable", "Navigation display", "Beacon / receiver"],
+      "constraints": "Use only the stated equipment and ordinary actions. Isolate the damaged feed before rerouting. Use the coordinates from the navigation display rather than inventing them. Do not claim rescue has already happened.",
+      "criteria": ["Isolate the damaged feed before rerouting.", "Connect the beacon to the antenna using the intact backup cable.", "Transmit station ID and displayed coordinates, then check for acknowledgement."],
+      "powerCost": 10,
+      "example": "I isolate the damaged feed and connect the beacon to the antenna using the intact backup cable. I read KESTREL's current coordinates from the navigation display, transmit them with the station ID in a distress packet, and check the receiver for acknowledgement."
+    }
+  ]
+}

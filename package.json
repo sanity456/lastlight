@@ -1,0 +1,19 @@
+{
+  "name": "lastlight",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": "24.x"},
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check:content": "node scripts/generate.mjs --check",
+    "dev": "vite --host 127.0.0.1 --port 4290",
+    "build": "npm run check:content && vite build",
+    "test": "npm run test:contract",
+    "test:contract": "node scripts/run-contract-tests.mjs"
+  },
+  "dependencies": {
+    "genlayer-js": "1.1.8",
+    "vite": "7.3.7"
+  }
+}
