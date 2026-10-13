@@ -23,7 +23,7 @@ The web app opens in read-only mode until the address in `web/src/deployment.jso
 ```powershell
 npm test
 npm run build
-genvm-lint lint contracts\lastlight.py --json
+.\.venv\Scripts\genvm-lint.exe lint contracts\lastlight.py --json
 ```
 
 `genvm-lint check` additionally needs the pinned GenVM runner archive installed in the local validator. The direct tests have a test-only workaround for `gltest`'s Windows temporary-file unlink behavior.
