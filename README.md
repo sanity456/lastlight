@@ -2,6 +2,8 @@
 
 LastLight is a three-turn station survival game for GenLayer. It is a new project and does not modify Dispute Court.
 
+Live app: https://lastlight-ten.vercel.app
+
 The [build specification](../lastlight-blueprint/BUILD_SPEC.md) fixes the game rules. `content/kestrel-01.json` is the authored mission source. Run `npm run generate` after changing it to regenerate the single-file contract's embedded rules and the web display copy.
 
 ## Local development
