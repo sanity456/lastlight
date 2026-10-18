@@ -1,12 +1,12 @@
 {
-  "status": "live-tests-recorded-awaiting-source-pin",
+  "status": "verified",
   "network": "studionet",
   "chainId": 61999,
   "contractAddress": "0x8C8779A657BDb2c8c6179d6f47d63A852801919a",
   "deploymentTxHash": "0xfed74ea3221d0195d34827d9fba600f3021468a8bc0034915a342ae1554d8d65",
   "rulesVersion": "lastlight-2",
   "missionHash": "c67e02a7c9c5e43a474f16d1559b73ca7a59c1cf9622dab014fdb5e135b3fd74",
-  "sourceCommit": null,
+  "sourceCommit": "e385e9eb9055916a3fdb7aede1368eadd1b71605",
   "cases": [
     {
       "name": "solo-positive-rescue",

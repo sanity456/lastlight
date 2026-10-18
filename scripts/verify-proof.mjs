@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { createClient } from 'genlayer-js';
+import { abi, createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
 
 const mission = JSON.parse(fs.readFileSync(new URL('../content/kestrel-01.json', import.meta.url), 'utf8'));
@@ -17,6 +17,19 @@ function successful(receipt) {
   if (receipt?.txExecutionResultName === 'FINISHED_WITH_RETURN' || receipt?.txExecutionResult === 1) return true;
   return receipt?.txExecutionResult == null && receipt?.txExecutionResultName == null
     && [1, 6, 'AGREE', 'MAJORITY_AGREE'].includes(receipt?.resultName ?? receipt?.result);
+}
+
+async function transactionDetails(client, hash) {
+  const transaction = await client.getTransaction({ hash });
+  assert(transaction, `Transaction not found: ${hash}`);
+  const rawCalldata = transaction.data?.calldata?.raw;
+  const decoded = Array.isArray(rawCalldata)
+    ? abi.calldata.decode(new Uint8Array(rawCalldata))
+    : new Map();
+  return {
+    transaction,
+    calldata: decoded instanceof Map ? Object.fromEntries(decoded) : decoded,
+  };
 }
 
 assert(proof.rulesVersion === mission.rulesVersion, 'Proof rules version does not match mission source.');
@@ -57,10 +70,11 @@ if (!proof.contractAddress || !proof.deploymentTxHash || !proof.sourceCommit
     console.log(`Finalized successfully: ${hash}`);
   }
 
-  const deployed = receipts.get(proof.deploymentTxHash)?.txDataDecoded;
-  assert(deployed?.type === 'deploy' && deployed.code === localSource,
+  const { transaction: deployment } = await transactionDetails(client, proof.deploymentTxHash);
+  const deployedCode = Buffer.from(deployment.data?.contract_code || '', 'base64').toString('utf8');
+  assert(deployedCode === localSource,
     'Deployment transaction does not contain the pinned public contract source.');
-  assert(deployed.contractAddress?.toLowerCase() === proof.contractAddress.toLowerCase(),
+  assert(deployment.data?.contract_address?.toLowerCase() === proof.contractAddress.toLowerCase(),
     'Deployment transaction created a different contract address.');
 
   const config = await client.readContract({ address: proof.contractAddress, functionName: 'get_config', args: [] });
@@ -70,9 +84,10 @@ if (!proof.contractAddress || !proof.deploymentTxHash || !proof.sourceCommit
 
   for (const testCase of proof.cases) {
     assert(testCase.sessionId, `Proof case is missing sessionId: ${testCase.name || 'unnamed'}`);
-    const creation = receipts.get(testCase.creationTxHash)?.txDataDecoded;
-    assert(creation?.type === 'call' && creation.callData?.method === 'create_session'
-      && creation.callData?.args?.[0] === testCase.sessionId,
+    const { transaction: creationTx, calldata: creation } = await transactionDetails(client, testCase.creationTxHash);
+    assert(creationTx.recipient?.toLowerCase() === proof.contractAddress.toLowerCase()
+      && creation.method === 'create_session'
+      && creation.args?.[0] === testCase.sessionId,
     `Creation transaction does not match case ${testCase.name}.`);
     const session = await client.readContract({ address: proof.contractAddress, functionName: 'get_session', args: [testCase.sessionId] });
     assert(session?.id === testCase.sessionId, `Could not read case ${testCase.name} from the deployed contract.`);
@@ -81,12 +96,13 @@ if (!proof.contractAddress || !proof.deploymentTxHash || !proof.sourceCommit
     assert(expectedVerdicts.length === 3 && expectedBranches.length === 3, `Case ${testCase.name} must list three verdicts and branch IDs.`);
     for (let index = 0; index < 3; index++) {
       const round = await client.readContract({ address: proof.contractAddress, functionName: 'get_round', args: [testCase.sessionId, BigInt(index)] });
-      const submitted = receipts.get(testCase.roundTxHashes[index])?.txDataDecoded;
-      assert(submitted?.type === 'call' && submitted.callData?.method === 'submit_plan'
-        && submitted.callData?.args?.[0] === testCase.sessionId
-        && String(submitted.callData.args[1]) === String(index)
-        && submitted.callData.args[2] === round.action_id
-        && submitted.callData.args[3]?.trim() === round.plan,
+      const { transaction: roundTx, calldata: submitted } = await transactionDetails(client, testCase.roundTxHashes[index]);
+      assert(roundTx.recipient?.toLowerCase() === proof.contractAddress.toLowerCase()
+        && submitted.method === 'submit_plan'
+        && submitted.args?.[0] === testCase.sessionId
+        && String(submitted.args[1]) === String(index)
+        && submitted.args[2] === round.action_id
+        && submitted.args[3]?.trim() === round.plan,
       `Round ${index + 1} transaction does not match case ${testCase.name}.`);
       assert(round?.mission_hash === localHash, `Round ${index + 1} in ${testCase.name} uses a different rules hash.`);
       assert(round?.judgment?.verdict === expectedVerdicts[index], `Unexpected verdict in ${testCase.name} round ${index + 1}.`);
