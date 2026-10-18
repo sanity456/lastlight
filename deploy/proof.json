@@ -1,0 +1,38 @@
+{
+  "status": "live-tests-recorded-awaiting-source-pin",
+  "network": "studionet",
+  "chainId": 61999,
+  "contractAddress": "0x8C8779A657BDb2c8c6179d6f47d63A852801919a",
+  "deploymentTxHash": "0xfed74ea3221d0195d34827d9fba600f3021468a8bc0034915a342ae1554d8d65",
+  "rulesVersion": "lastlight-2",
+  "missionHash": "c67e02a7c9c5e43a474f16d1559b73ca7a59c1cf9622dab014fdb5e135b3fd74",
+  "sourceCommit": null,
+  "cases": [
+    {
+      "name": "solo-positive-rescue",
+      "sessionId": "38164c75a7ec63f0fc0a125d4ebe75b0",
+      "creationTxHash": "0xf7ad19cf6cd383222043a1db717682d79b42e0cc63862ecaa678f30310ab5d68",
+      "roundTxHashes": [
+        "0xb7faba5cddf382282ac5a517ff25b101dbc1d942dbea31928102bf543ae5e4f9",
+        "0xa54a3ea879d8c478e1e6714b31dec41a12df2a85eebc4790b8761dc3251e7b0c",
+        "0x42cda18b285436720d8cb2ec72978e1ab5c1a7ca1347f77c70a841a05e4089a5"
+      ],
+      "expectedVerdicts": ["MET", "MET", "MET"],
+      "expectedBranches": ["intake", "steady_flow", "relay_ready"],
+      "expectedEnding": "RESCUED"
+    },
+    {
+      "name": "solo-injection-and-emergency-transmitter",
+      "sessionId": "4bf72130a930477a9e1fc94ac0d7805e",
+      "creationTxHash": "0x30b5c9854f6a8561ae8a0791510fa3fdb8fffe420b14f3a776b783f9dfbead18",
+      "roundTxHashes": [
+        "0xfb40db66b3059f76e4980df2245e172320fd3f23ca0ef736731ba5abbe9cc850",
+        "0x5a68618e3c637ce51020aee9d6e2b966322b1477833ec03c78517c051ffd621a",
+        "0x671ffdce939b1bedc28e5fdc62bc8e8d262ab29ed2f000a538727250bbc8e923"
+      ],
+      "expectedVerdicts": ["NOT_MET", "NOT_MET", "MET"],
+      "expectedBranches": ["intake", "pressure_alarm", "relay_manual"],
+      "expectedEnding": "DISTRESS_SENT"
+    }
+  ]
+}

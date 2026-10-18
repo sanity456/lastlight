@@ -1,9 +1,11 @@
 import './styles.css';
+import './milestone.css';
+import proof from '../../deploy/proof.json';
 import {
   CHAIN_ID, EXPLORER, MISSION, MISSION_HASH, configuredAddress, saveAddress,
   validAddress, validSessionId, short, requestWallet, getProvider, client, read,
   write, deploy, waitForFinality, verifyContract, pendingAction, rememberPending,
-  forgetPending, newId, safeError,
+  forgetPending, savedRoundTx, saveRoundTx, newId, safeError,
 } from './lib/chain.js';
 
 const app = document.querySelector('#app');
@@ -12,7 +14,7 @@ const state = {
   account: '', contract: configuredAddress(), verified: false,
   sessionId: validSessionId(query.get('s')) ? query.get('s') : '',
   session: null, rounds: [], sessions: [], sessionsCursor: 0n, sessionsHasMore: false, tab: 'mission',
-  busy: false, pending: pendingAction(), notice: '', error: '',
+  busy: false, pending: pendingAction(), notice: '', error: '', sessionError: '',
   modal: null, plan: '', mode: 'SOLO', guest: '', addressInput: '',
 };
 
@@ -21,7 +23,21 @@ const txLink = hash => `${EXPLORER.replace(/\/$/, '')}/tx/${encodeURIComponent(h
 const addressLink = address => `${EXPLORER.replace(/\/$/, '')}/address/${encodeURIComponent(address)}`;
 const shareLink = id => `${location.origin}${location.pathname}?s=${encodeURIComponent(id)}`;
 const resourceClass = value => value <= 20 ? 'critical' : value <= 40 ? 'warning' : 'healthy';
-const currentScenario = () => state.session && state.session.next_round_index < 3 ? MISSION.rounds[state.session.next_round_index] : null;
+const roundTx = record => {
+  const liveCase = proof.contractAddress?.toLowerCase() === state.contract.toLowerCase()
+    ? proof.cases.find(item => item.sessionId === record.session_id) : null;
+  const fromProof = liveCase?.roundTxHashes?.[record.round_index];
+  return /^0x[\da-fA-F]{64}$/.test(fromProof || '')
+    ? fromProof : savedRoundTx(state.contract, record.session_id, record.round_index);
+};
+const currentScenario = () => {
+  if (!state.session || state.session.next_round_index >= MISSION.rounds.length) return null;
+  const round = MISSION.rounds[state.session.next_round_index];
+  return state.session.next_round_index === 0 ? round : round.branches[state.session.branch_id] || null;
+};
+const scenarioForRecord = record => record.round_index === 0
+  ? MISSION.rounds[0]
+  : MISSION.rounds[record.round_index].branches[record.branch_id];
 const currentPilot = () => state.session && (state.session.mode === 'SOLO' || state.session.next_round_index !== 1 ? state.session.host : state.session.joined_guest);
 const actionable = () => state.verified && state.account && !state.busy && !state.pending;
 
@@ -29,6 +45,7 @@ function setSessionId(id) {
   state.sessionId = id;
   state.session = null;
   state.rounds = [];
+  state.sessionError = '';
   state.plan = '';
   const url = new URL(location.href);
   if (id) url.searchParams.set('s', id); else url.searchParams.delete('s');
@@ -36,7 +53,7 @@ function setSessionId(id) {
 }
 
 function statusLabel(status) {
-  return ({ WAITING: 'Waiting for crew', ACTIVE: 'Mission live', COMPLETED: 'Mission complete', FAILED: 'Station lost', CANCELLED: 'Cancelled', ABANDONED: 'Abandoned' })[status] || status;
+  return ({ WAITING: 'Waiting for crew', ACTIVE: 'Mission live', COMPLETED: 'Mission complete', FAILED: 'Station lost', CANCELLED: 'Cancelled', ABANDONED: 'Abandoned', EXPIRED: 'Invitation expired' })[status] || status;
 }
 
 function button(label, action, extra = '') { return `<button type="button" data-action="${action}" ${extra}>${label}</button>`; }
@@ -66,7 +83,7 @@ function renderSetup() {
 }
 
 function renderHero() {
-  return `<section class="hero"><div class="hero-copy"><span class="eyebrow"><span class="eyebrow-line"></span> THE FIRST COOPERATIVE CONSENSUS MISSION</span><h1>The station is failing.<br /><em>Your words are the tools.</em></h1><p>Three emergencies. One shared fate. Write a plan, let independent GenLayer validators judge what it actually solves, and keep Kestrel alive until rescue can hear you.</p><div class="hero-actions">${button('Start a mission  ↗', 'open-create', 'class="primary"')}${button('Explore the rules  ↓', 'tab-rules', 'class="ghost"')}</div><div class="hero-meta"><span>◉ SOLO OR TWO-PERSON CREW</span><span>◇ NO STAKES OR REWARDS</span><span>✳ ON-CHAIN OUTCOMES</span></div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="star-star">✳</div><div class="spacecraft"><div class="wing left"></div><div class="ship-core"><span>KESTREL</span><i></i></div><div class="wing right"></div></div><div class="art-label top">STATION / KESTREL-01</div><div class="art-label bottom">SIGNAL STATUS: OFFLINE <span>●</span></div></div></section>`;
+  return `<section class="hero"><div class="hero-copy"><span class="eyebrow"><span class="eyebrow-line"></span> A BRANCHING COOPERATIVE SURVIVAL MISSION</span><h1>The station is failing.<br /><em>Your words are the tools.</em></h1><p>Three emergencies. One shared fate. Each finalized decision changes the next scene, the tools in reach, and Kestrel's chance of getting home.</p><div class="hero-actions">${button('Start a mission  ↗', 'open-create', 'class="primary"')}${button('Explore the rules  ↓', 'tab-rules', 'class="ghost"')}</div><div class="hero-meta"><span>◉ SOLO OR TWO-PERSON CREW</span><span>◇ NO STAKES OR REWARDS</span><span>✳ EVIDENCE-BACKED OUTCOMES</span></div></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="star-star">✳</div><div class="spacecraft"><div class="wing left"></div><div class="ship-core"><span>KESTREL</span><i></i></div><div class="wing right"></div></div><div class="art-label top">STATION / KESTREL-01</div><div class="art-label bottom">SIGNAL STATUS: OFFLINE <span>●</span></div></div></section>`;
 }
 
 function renderCreate() {
@@ -78,23 +95,26 @@ function renderResource(name, value) {
 }
 
 function renderRound(record) {
-  const scenario = MISSION.rounds[record.round_index];
-  const flags = record.flags || {};
-  return `<article class="round-record"><div class="record-top"><span class="eyebrow">ROUND 0${record.round_index + 1} · ${esc(scenario.sector)}</span><span class="band ${esc(record.band.toLowerCase())}">${esc(record.band)}</span></div><h3>${esc(scenario.title)}</h3><blockquote>${esc(record.plan)}</blockquote><div class="criteria-results">${scenario.criteria.map((criterion, index) => `<span class="${flags[`c${index + 1}`] ? 'pass' : 'miss'}">${flags[`c${index + 1}`] ? '✓' : '×'} ${esc(criterion)}</span>`).join('')}</div><div class="record-bottom"><span>${esc(short(record.actor))} · ${esc(new Date(record.resolved_at * 1000).toLocaleString())}</span><span>O₂ ${esc(record.resources_before.oxygen)} → ${esc(record.resources_after.oxygen)} · PWR ${esc(record.resources_before.power)} → ${esc(record.resources_after.power)} · HULL ${esc(record.resources_before.hull)} → ${esc(record.resources_after.hull)}</span></div></article>`;
+  const scenario = scenarioForRecord(record);
+  const judgment = record.judgment || {};
+  const verdict = judgment.verdict || 'INSUFFICIENT_EVIDENCE';
+  const reason = MISSION.reasonCodes[judgment.reason_code] || 'No reason code was recorded.';
+  const hash = roundTx(record);
+  return `<article class="round-record"><div class="record-top"><span class="eyebrow">ROUND 0${record.round_index + 1} · ${esc(scenario.sector || MISSION.rounds[record.round_index].sector)} · PATH ${esc(record.branch_id)}</span><span class="band ${esc(verdict.toLowerCase())}">${esc(verdict.replaceAll('_', ' '))}</span></div><h3>${esc(scenario.title)}</h3><p class="judged-criterion"><strong>Criterion:</strong> ${esc(record.criterion?.text || scenario.criterion.text)}</p><p class="judgment-reason">${esc(reason)}</p><div class="evidence-quote"><span class="mini-label">VERBATIM PLAN EVIDENCE</span><blockquote>${judgment.quote ? esc(judgment.quote) : 'No supporting excerpt was found in the plan.'}</blockquote></div><details class="full-plan"><summary>Read the full public plan</summary><blockquote>${esc(record.plan)}</blockquote></details><div class="record-bottom"><span>${esc(short(record.actor))} · ${esc(new Date(record.resolved_at * 1000).toLocaleString())}${hash ? ` · <a href="${esc(txLink(hash))}" target="_blank" rel="noopener">Finalized transaction ↗</a>` : ''}</span><span>O₂ ${esc(record.resources_before.oxygen)} → ${esc(record.resources_after.oxygen)} · PWR ${esc(record.resources_before.power)} → ${esc(record.resources_after.power)} · HULL ${esc(record.resources_before.hull)} → ${esc(record.resources_after.hull)}</span></div></article>`;
 }
 
 function renderSession() {
   const s = state.session;
-  if (!s) return `<section class="loading-panel"><span class="eyebrow">MISSION RECORD</span><h2>${state.sessionId ? 'Loading mission…' : 'No mission selected'}</h2><p>${state.sessionId ? 'Reading confirmed Studionet state.' : 'Start one below or open a crew invitation.'}</p></section>`;
+  if (!s) return `<section class="loading-panel"><span class="eyebrow">MISSION RECORD</span><h2>${state.sessionError ? 'Mission unavailable' : state.sessionId && state.verified ? 'Loading mission…' : state.sessionId ? 'Contract needed' : 'No mission selected'}</h2><p>${esc(state.sessionError || (state.sessionId && !state.verified ? 'Verify the matching LastLight v2 contract above to open this mission.' : state.sessionId ? 'Reading confirmed Studionet state.' : 'Start one below or open a crew invitation.'))}</p>${state.sessionError ? button('Clear mission ID', 'clear-session') : ''}</section>`;
   const scenario = currentScenario();
   const pilot = currentPilot();
   const me = state.account.toLowerCase();
   const myTurn = s.status === 'ACTIVE' && me === pilot;
-  return `<section class="mission-panel"><div class="mission-top"><div><span class="eyebrow">MISSION ID / ${esc(s.id.toUpperCase())}</span><h2>Kestrel is ${s.status === 'COMPLETED' ? 'home.' : s.status === 'FAILED' ? 'lost.' : 'counting on you.'}</h2></div><span class="status-pill ${esc(s.status.toLowerCase())}">${esc(statusLabel(s.status))}</span></div><div class="mission-meta"><span>HOST <strong>${esc(short(s.host))}</strong></span><span>CREW <strong>${s.mode === 'SOLO' ? 'SOLO' : `${esc(short(s.host))} / ${esc(short(s.joined_guest || s.invited_guest))}`}</strong></span><span>ROUND <strong>${Math.min(3, s.next_round_index + 1)} / 3</strong></span><button type="button" data-action="copy-link">Copy mission link ↗</button></div><div class="resources">${renderResource('OXYGEN', s.oxygen)}${renderResource('POWER', s.power)}${renderResource('HULL', s.hull)}</div>
-  ${s.status === 'WAITING' ? `<div class="phase-card"><span class="eyebrow">AWAITING CREW</span><h3>One seat remains.</h3><p>Only invited wallet <strong>${esc(s.invited_guest)}</strong> can join this mission. Share the mission link with that person.</p><div class="phase-actions">${button('Join as invited crew ↗', 'join', `class="primary" ${me !== s.invited_guest || !actionable() ? 'disabled' : ''}`)}${button('Cancel mission', 'cancel', `${me !== s.host || !actionable() ? 'disabled' : ''}`)}</div></div>` : ''}
-  ${s.status === 'ACTIVE' && scenario ? `<div class="scenario"><div class="scenario-kicker"><span class="eyebrow">ROUND 0${s.next_round_index + 1} / ${esc(scenario.sector.toUpperCase())}</span><span class="cost">−${scenario.powerCost} POWER · −12 OXYGEN</span></div><h3>${esc(scenario.title)}</h3><p class="scenario-summary">${esc(scenario.summary)}</p><div class="scenario-grid"><div><span class="mini-label">WHAT YOU KNOW</span><p>${esc(scenario.facts)}</p></div><div><span class="mini-label">AVAILABLE EQUIPMENT</span><ul>${scenario.equipment.map(item => `<li>${esc(item)}</li>`).join('')}</ul></div></div><div class="constraints"><span class="mini-label">CONSTRAINTS</span><p>${esc(scenario.constraints)}</p></div><div class="criteria"><span class="mini-label">WHAT A GOOD PLAN MUST ADDRESS</span>${scenario.criteria.map((criterion, i) => `<div><span>0${i + 1}</span>${esc(criterion)}</div>`).join('')}</div></div>
-    <div class="plan-panel"><div class="plan-head"><span class="eyebrow">YOUR DECISION</span><span>${myTurn ? 'YOU ARE THE CURRENT PILOT' : `WAITING FOR ${esc(short(pilot))}`}</span></div><label for="plan">Write your plan for this emergency</label><textarea id="plan" maxlength="1200" placeholder="Describe the steps you would take, in order, using only the tools you have…" ${!myTurn || !actionable() ? 'disabled' : ''}>${esc(state.plan)}</textarea><div class="plan-footer"><small><span id="byte-count">${new TextEncoder().encode(state.plan.trim()).length}</span> / 1200 UTF-8 bytes · minimum 40</small>${button('Submit plan for consensus ↗', 'submit-plan', `class="primary" ${!myTurn || !actionable() ? 'disabled' : ''}`)}</div></div><div class="abandon">${button('Abandon this mission', 'abandon', `class="text-button" ${![s.host, s.joined_guest].includes(me) || !actionable() ? 'disabled' : ''}`)}</div>` : ''}
-  ${['COMPLETED', 'FAILED', 'ABANDONED', 'CANCELLED'].includes(s.status) ? `<div class="ending"><span class="eyebrow">FINAL SIGNAL</span><h3>${s.ending === 'RESCUED' ? 'Rescue acknowledged.' : s.ending === 'HOLDING_ON' ? 'Still holding on.' : s.ending === 'FAILED' ? 'The station went dark.' : statusLabel(s.status)}</h3><p>Ending: <strong>${esc(s.ending || s.status)}</strong> · Shared score: <strong>${esc(s.final_score)}</strong></p><p>This outcome was calculated from the three confirmed consensus judgments and immutable resource rules.</p></div>` : ''}
+  return `<section class="mission-panel"><div class="mission-top"><div><span class="eyebrow">MISSION ID / ${esc(s.id.toUpperCase())}</span><h2>Kestrel is ${s.status === 'COMPLETED' ? 'home.' : s.status === 'FAILED' ? 'lost.' : s.status === 'EXPIRED' ? 'awaiting a new crew.' : s.status === 'WAITING' ? 'waiting for its crew.' : 'counting on you.'}</h2></div><span class="status-pill ${esc(s.status.toLowerCase())}">${esc(statusLabel(s.status))}</span></div><div class="mission-meta"><span>HOST <strong>${esc(short(s.host))}</strong></span><span>CREW <strong>${s.mode === 'SOLO' ? 'SOLO' : `${esc(short(s.host))} / ${esc(short(s.joined_guest || s.invited_guest))}`}</strong></span><span>ROUND <strong>${Math.min(3, s.next_round_index + 1)} / 3</strong></span><button type="button" data-action="copy-link">Copy mission link ↗</button></div><div class="resources">${renderResource('OXYGEN', s.oxygen)}${renderResource('POWER', s.power)}${renderResource('HULL', s.hull)}</div>
+  ${s.status === 'WAITING' ? `<div class="phase-card"><span class="eyebrow">AWAITING CREW</span><h3>One seat remains.</h3><p>Only invited wallet <strong>${esc(s.invited_guest)}</strong> can join before <strong>${new Date(s.invite_deadline * 1000).toLocaleString()}</strong>. The invitation expires after 72 hours; anyone can close it after expiry.</p><div class="phase-actions">${button('Join as invited crew ↗', 'join', `class="primary" ${me !== s.invited_guest || !actionable() || Date.now() / 1000 > s.invite_deadline ? 'disabled' : ''}`)}${button('Cancel mission', 'cancel', `${me !== s.host || !actionable() ? 'disabled' : ''}`)}${Date.now() / 1000 > s.invite_deadline ? button('Close expired invitation', 'expire-invite', !actionable() ? 'disabled' : '') : ''}</div></div>` : ''}
+  ${s.status === 'ACTIVE' && scenario ? `<div class="scenario"><div class="scenario-kicker"><span class="eyebrow">ROUND 0${s.next_round_index + 1} / ${esc((scenario.sector || MISSION.rounds[s.next_round_index].sector).toUpperCase())}</span><span class="cost">−${scenario.powerCost} POWER · −${MISSION.oxygenCost} OXYGEN</span></div>${s.next_round_index > 0 ? `<div class="branch-callout"><span class="mini-label">THIS SCENE CHANGED BECAUSE OF ROUND ${s.next_round_index}</span><strong>${s.branch_id === 'steady_flow' ? 'The intake stayed stable; the powered repair locker is open.' : s.branch_id === 'pressure_alarm' ? 'The intake remained unstable; the repair locker is blocked.' : s.branch_id === 'relay_ready' ? 'The coolant repair kept the main relay powered.' : 'The coolant emergency forced the crew onto the backup transmitter.'}</strong></div>` : ''}<h3>${esc(scenario.title)}</h3><p class="scenario-summary">${esc(scenario.summary)}</p><div class="scenario-grid"><div><span class="mini-label">WHAT YOU KNOW</span><p>${esc(scenario.facts)}</p></div><div><span class="mini-label">AVAILABLE EQUIPMENT</span><ul>${scenario.equipment.map(item => `<li>${esc(item)}</li>`).join('')}</ul></div></div><div class="constraints"><span class="mini-label">CONSTRAINTS</span><p>${esc(scenario.constraints)}</p></div><div class="criteria"><span class="mini-label">ONE CONSENSUS CRITERION</span><div><span>01</span>${esc(scenario.criterion.text)}</div></div></div>
+    <div class="plan-panel"><div class="plan-head"><span class="eyebrow">YOUR DECISION</span><span>${myTurn ? 'YOU ARE THE CURRENT PILOT' : `WAITING FOR ${esc(short(pilot))}`}</span></div><label for="plan">Explain how your plan addresses the criterion</label><textarea id="plan" maxlength="1200" placeholder="Describe what you would do and how it meets the single criterion…" ${!myTurn || !actionable() ? 'disabled' : ''}>${esc(state.plan)}</textarea><div class="plan-footer"><small><span id="byte-count">${new TextEncoder().encode(state.plan.trim()).length}</span> / ${MISSION.limits.maxPlanBytes} UTF-8 bytes · minimum ${MISSION.limits.minPlanBytes}</small>${button('Submit plan for consensus ↗', 'submit-plan', `class="primary" ${!myTurn || !actionable() ? 'disabled' : ''}`)}</div></div><div class="abandon">${button('Abandon this mission', 'abandon', `class="text-button" ${![s.host, s.joined_guest].includes(me) || !actionable() ? 'disabled' : ''}`)}</div>` : ''}
+  ${['COMPLETED', 'FAILED', 'ABANDONED', 'CANCELLED', 'EXPIRED'].includes(s.status) ? `<div class="ending"><span class="eyebrow">FINAL SIGNAL</span><h3>${s.ending === 'RESCUED' ? 'Rescue acknowledged.' : s.ending === 'DISTRESS_SENT' ? 'The distress signal got through.' : s.ending === 'HOLDING_ON' ? 'Still holding on.' : s.ending === 'FAILED' ? 'The station went dark.' : statusLabel(s.status)}</h3><p>Ending: <strong>${esc(s.ending || s.status)}</strong> · Shared score: <strong>${esc(s.final_score)}</strong></p><p>${s.status === 'EXPIRED' ? 'The invitation window closed before the crew joined.' : 'The contract calculated this ending from finalized, evidence-backed judgments and fixed resource rules.'}</p></div>` : ''}
   ${state.rounds.length ? `<div class="history"><div class="section-heading"><span class="eyebrow">MISSION LOG</span><h2>Every decision, on record.</h2></div>${state.rounds.map(renderRound).join('')}</div>` : ''}</section>`;
 }
 
@@ -103,13 +123,16 @@ function renderHangar() {
 }
 
 function renderRules() {
-  return `<section class="rules-page"><span class="eyebrow">FIELD MANUAL / V1</span><h1>No perfect answer.<br /><em>Only the next good decision.</em></h1><div class="rule-cards"><article><b>01</b><h2>Start or join</h2><p>Play solo or invite one specific wallet. In a crew, the host handles rounds one and three; the guest pilots round two.</p></article><article><b>02</b><h2>Make a plan</h2><p>Read the emergency, available equipment, and constraints. Submit one public plan per round. There is no AI-generated plan button.</p></article><article><b>03</b><h2>Consensus decides</h2><p>Independent validators judge three disclosed criteria plus impossible or prohibited actions. The contract converts their flags into SUCCESS, PARTIAL, or FAIL.</p></article><article><b>04</b><h2>Live with it</h2><p>Oxygen, power, and hull change by fixed rules. A resource reaching zero ends the mission. Three completed rounds produce a shared ending and score.</p></article></div><div class="rules-details"><h2>Nothing is at stake except the station.</h2><p>Game actions attach 0 GEN. There is no escrow, prize, token, NFT, or paid advantage. Wallets pay only any normal network transaction fees. Player plans, judgments, and outcomes are public on Studionet, so do not include private information.</p><code>RULES ${esc(MISSION.rulesVersion)} · SHA-256 ${esc(MISSION_HASH)}</code></div></section>`;
+  return `<section class="rules-page"><span class="eyebrow">FIELD MANUAL / V2</span><h1>No perfect answer.<br /><em>Only the next good decision.</em></h1><div class="rule-cards"><article><b>01</b><h2>Start or join</h2><p>Play solo or invite one specific wallet. In a crew, the host handles rounds one and three; the invited guest pilots round two.</p></article><article><b>02</b><h2>One criterion at a time</h2><p>Each transaction asks validators to judge one defined action against your public plan. The model returns MET, NOT MET, or INSUFFICIENT EVIDENCE with a verbatim excerpt.</p></article><article><b>03</b><h2>Your choices change the mission</h2><p>The contract maps each verdict to fixed resource changes and chooses the next emergency branch. A stable intake opens the powered repair locker; a coolant outcome decides which communications equipment remains.</p></article><article><b>04</b><h2>Inspect the proof</h2><p>Every finalized round shows its criterion, verdict, reason code, evidence excerpt, full public plan, resource changes, and the equipment path selected for the next round.</p></article></div><div class="rules-details"><h2>Nothing is at stake except the station.</h2><p>Game actions attach 0 GEN. There is no escrow, prize, token, NFT, or paid advantage. Wallets pay only any normal network transaction fees. Player plans, judgments, and outcomes are public on Studionet, so do not include private information. Branches use fictional rules and do not prove real-world repair work.</p><code>RULES ${esc(MISSION.rulesVersion)} · SHA-256 ${esc(MISSION_HASH)}</code></div></section>`;
 }
 
 function renderModal() {
   if (!state.modal) return '';
   const { title, detail, action, label } = state.modal;
-  return `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><span class="eyebrow">FINAL REVIEW</span><h2 id="modal-title">${esc(title)}</h2><p>${esc(detail)}</p><div class="modal-warning">This transaction sends 0 GEN to the game contract. A Studionet network fee may apply. Your action and any plan text are public and permanent after finality.</div><label class="confirm-check"><input type="checkbox" id="confirm-box" /> I reviewed the wallet, network, and public action.</label><div class="modal-actions">${button('Back', 'close-modal', 'class="ghost"')}${button(label, action, 'class="primary" disabled id="modal-confirm"')}</div></div></div>`;
+  const warning = action === 'confirm-deploy'
+    ? 'Deployment attaches 0 GEN as contract value. A Studionet network fee may apply. The contract source becomes public after finality.'
+    : 'This transaction sends 0 GEN to the game contract. A Studionet network fee may apply. Your action and any plan text are public and permanent after finality.';
+  return `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><span class="eyebrow">FINAL REVIEW</span><h2 id="modal-title">${esc(title)}</h2><p>${esc(detail)}</p><div class="modal-warning">${warning}</div><label class="confirm-check"><input type="checkbox" id="confirm-box" /> I reviewed the wallet, network, and public action.</label><div class="modal-actions">${button('Back', 'close-modal', 'class="ghost"')}${button(label, action, 'class="primary" disabled id="modal-confirm"')}</div></div></div>`;
 }
 
 function render() {
@@ -147,10 +170,17 @@ async function refresh() {
   try {
     await verifyContract(state.contract, state.account || undefined);
     state.verified = true;
+    state.sessionError = '';
     if (state.sessionId) {
-      state.session = await read(state.contract, 'get_session', [state.sessionId], state.account || undefined);
-      state.rounds = [];
-      for (let i = 0; i < Math.min(3, Number(state.session.next_round_index)); i++) state.rounds.push(await read(state.contract, 'get_round', [state.sessionId, BigInt(i)], state.account || undefined));
+      try {
+        state.session = await read(state.contract, 'get_session', [state.sessionId], state.account || undefined);
+        state.rounds = [];
+        for (let i = 0; i < Math.min(3, Number(state.session.next_round_index)); i++) state.rounds.push(await read(state.contract, 'get_round', [state.sessionId, BigInt(i)], state.account || undefined));
+      } catch (error) {
+        state.session = null;
+        state.rounds = [];
+        state.sessionError = `Could not load mission ${state.sessionId}. Check the ID and contract address, then retry.`;
+      }
     }
     await loadSessionPage(true);
     state.error = '';
@@ -169,7 +199,7 @@ async function connect() {
   } catch (error) { message(safeError(error), 'error'); }
 }
 
-async function perform(kind, fn, after, proof = {}) {
+async function perform(kind, fn, proof = {}) {
   if (state.busy || state.pending) return;
   state.busy = true; state.modal = null; state.error = ''; state.notice = `Preparing ${kind}…`; render();
   try {
@@ -181,7 +211,11 @@ async function perform(kind, fn, after, proof = {}) {
     rememberPending(state.pending);
     state.notice = `Submitted ${kind}. Waiting for GenLayer consensus…`; render();
     const receipt = await waitForFinality(hash, state.account);
-    await after(receipt);
+    await verifyPendingAction(state.pending, receipt);
+    if (kind === 'Submit plan') {
+      saveRoundTx(state.pending.contract, state.pending.sessionId, proof.round, hash);
+      state.plan = '';
+    }
     forgetPending(); state.pending = null;
     state.notice = `${kind} finalized successfully.`;
     await refresh();
@@ -216,6 +250,8 @@ async function verifyPendingAction(pending, receipt) {
     throw new Error('The cancellation was not found on-chain.');
   } else if (pending.kind === 'Abandon mission' && session.status !== 'ABANDONED') {
     throw new Error('The abandonment was not found on-chain.');
+  } else if (pending.kind === 'Expire invitation' && session.status !== 'EXPIRED') {
+    throw new Error('The invitation expiry was not found on-chain.');
   }
 }
 
@@ -226,6 +262,10 @@ async function recoverPending() {
   try {
     const receipt = await waitForFinality(pending.hash, pending.account);
     await verifyPendingAction(pending, receipt);
+    if (pending.kind === 'Submit plan') {
+      saveRoundTx(pending.contract, pending.sessionId, pending.proof.round, pending.hash);
+      state.plan = '';
+    }
     forgetPending(); state.pending = null;
     state.notice = `${pending.kind} finalized successfully.`;
     await refresh();
@@ -262,13 +302,14 @@ async function act(action, target) {
   if (action === 'recheck') return recoverPending();
   if (action === 'copy-link') { await navigator.clipboard.writeText(shareLink(state.sessionId)); message('Mission link copied.'); return; }
   if (action === 'open-session') { setSessionId(target.dataset.id); state.tab = 'mission'; await refresh(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if (action === 'clear-session') { setSessionId(''); render(); return; }
   if (action === 'use-contract') {
-    try { const value = document.querySelector('#contract-address')?.value.trim(); saveAddress(value); state.contract = value; await refresh(); if (state.verified) message('Contract verified against LastLight’s mission hash.'); }
+    try { const value = document.querySelector('#contract-address')?.value.trim(); await verifyContract(value); saveAddress(value); state.contract = value; await refresh(); if (state.verified) message('Contract verified against LastLight’s mission hash.'); }
     catch (error) { message(safeError(error), 'error'); }
     return;
   }
   if (action === 'deploy') return openReview('Deploy LastLight to Studionet', 'The connected wallet will deploy this pinned mission contract. A network fee applies; no GEN is sent as contract value.', 'confirm-deploy', 'Open MetaMask ↗');
-  if (action === 'confirm-deploy') return perform('Deploy contract', () => deploy(state.account), finishDeployment);
+  if (action === 'confirm-deploy') return perform('Deploy contract', () => deploy(state.account));
   if (action === 'create') {
     if (!actionable()) return;
     const guest = state.mode === 'DUO' ? document.querySelector('#guest')?.value.trim() : '';
@@ -278,43 +319,28 @@ async function act(action, target) {
   }
   if (action === 'confirm-create') {
     const id = newId();
-    return perform('Create mission', () => write(state.contract, 'create_session', [id, state.mode, state.guest], state.account), async () => {
-      const created = await read(state.contract, 'get_session', [id], state.account);
-      if (created.id !== id) throw new Error('Created mission could not be verified.');
-      setSessionId(id); state.tab = 'mission';
-    }, { id });
+    return perform('Create mission', () => write(state.contract, 'create_session', [id, state.mode, state.guest], state.account), { id });
   }
   if (!state.session || !actionable()) return;
   if (action === 'join') return openReview('Join the crew', `Join mission ${state.sessionId} as invited wallet ${state.account}.`, 'confirm-join', 'Open MetaMask ↗');
-  if (action === 'confirm-join') return perform('Join mission', () => write(state.contract, 'join_session', [state.sessionId], state.account), async () => {
-    const joined = await read(state.contract, 'get_session', [state.sessionId]);
-    if (joined.joined_guest !== state.account.toLowerCase() || joined.status !== 'ACTIVE') throw new Error('The crew join could not be verified on-chain.');
-    state.session = joined;
-  });
+  if (action === 'confirm-join') return perform('Join mission', () => write(state.contract, 'join_session', [state.sessionId], state.account));
   if (action === 'cancel') return openReview('Cancel this waiting mission', 'The invited crew will no longer be able to join. This cannot be undone.', 'confirm-cancel', 'Open MetaMask ↗');
-  if (action === 'confirm-cancel') return perform('Cancel mission', () => write(state.contract, 'cancel_session', [state.sessionId], state.account), async () => {
-    const cancelled = await read(state.contract, 'get_session', [state.sessionId]);
-    if (cancelled.status !== 'CANCELLED') throw new Error('The cancellation could not be verified on-chain.');
-  });
+  if (action === 'confirm-cancel') return perform('Cancel mission', () => write(state.contract, 'cancel_session', [state.sessionId], state.account));
+  if (action === 'expire-invite') return openReview('Close expired invitation', 'The 72-hour join window has passed. This permissionless action closes the waiting mission so it no longer remains open.', 'confirm-expire-invite', 'Open MetaMask ↗');
+  if (action === 'confirm-expire-invite') return perform('Expire invitation', () => write(state.contract, 'expire_invitation', [state.sessionId], state.account));
   if (action === 'abandon') return openReview('Abandon this live mission', 'This ends the game for the whole crew with score zero. This cannot be undone.', 'confirm-abandon', 'Open MetaMask ↗');
-  if (action === 'confirm-abandon') return perform('Abandon mission', () => write(state.contract, 'abandon_session', [state.sessionId], state.account), async () => {
-    const abandoned = await read(state.contract, 'get_session', [state.sessionId]);
-    if (abandoned.status !== 'ABANDONED') throw new Error('The abandonment could not be verified on-chain.');
-  });
+  if (action === 'confirm-abandon') return perform('Abandon mission', () => write(state.contract, 'abandon_session', [state.sessionId], state.account));
   if (action === 'submit-plan') {
     state.plan = document.querySelector('#plan')?.value.trim() || '';
     const bytes = new TextEncoder().encode(state.plan).length;
     if (bytes < 40 || bytes > 1200) return message('Plan must be 40 to 1200 UTF-8 bytes.', 'error');
     if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(state.plan)) return message('Plan contains unsupported control characters.', 'error');
-    return openReview('Submit your public plan', `Round ${state.session.next_round_index + 1}: “${state.plan.slice(0, 190)}${state.plan.length > 190 ? '…' : ''}” Validators will classify the three criteria and constraints.`, 'confirm-plan', 'Open MetaMask ↗');
+    const scenario = currentScenario();
+    return openReview('Submit your public plan', `Round ${state.session.next_round_index + 1} criterion: “${scenario.criterion.text}” Your plan will be judged against this one criterion. Validators return a fixed verdict and a verbatim excerpt.`, 'confirm-plan', 'Open MetaMask ↗');
   }
   if (action === 'confirm-plan') {
     const id = newId(); const round = Number(state.session.next_round_index); const plan = state.plan;
-    return perform('Submit plan', () => write(state.contract, 'submit_plan', [state.sessionId, BigInt(round), id, plan], state.account), async () => {
-      const record = await read(state.contract, 'get_round', [state.sessionId, BigInt(round)], state.account);
-      if (record.action_id !== id) throw new Error('Round outcome could not be verified.');
-      state.plan = '';
-    }, { round, actionId: id });
+    return perform('Submit plan', () => write(state.contract, 'submit_plan', [state.sessionId, BigInt(round), id, plan], state.account), { round, actionId: id });
   }
 }
 

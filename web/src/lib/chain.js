@@ -6,14 +6,16 @@ import missionHash from '../generated/mission-hash.json';
 import deployment from '../deployment.json';
 
 export const CHAIN_ID = 61999;
-export const EXPLORER = studionet.blockExplorers.default.url;
+// The SDK's legacy Vercel explorer is paused; use Studionet's official explorer.
+export const EXPLORER = 'https://explorer-studio.genlayer.com';
 export const CONTRACT_SOURCE = source;
 export const MISSION = mission;
 export const MISSION_HASH = missionHash.sha256;
 const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const SESSION_RE = /^[a-f0-9]{32}$/;
-const ADDRESS_KEY = 'lastlight:studionet:contract';
-const PENDING_KEY = 'lastlight:studionet:pending';
+const ADDRESS_KEY = `lastlight:studionet:${MISSION_HASH}:contract`;
+const PENDING_KEY = `lastlight:studionet:${MISSION_HASH}:pending`;
+const ROUND_TX_KEY = `lastlight:studionet:${MISSION_HASH}:round-transactions`;
 
 export function validAddress(value) { return ADDRESS_RE.test(value || '') && !/^0x0{40}$/i.test(value); }
 export function validSessionId(value) { return SESSION_RE.test(value || ''); }
@@ -21,7 +23,7 @@ export function short(value) { return value ? `${value.slice(0, 7)}…${value.sl
 export function configuredAddress() {
   const fromBuild = import.meta.env.VITE_LASTLIGHT_CONTRACT_ADDRESS || deployment.contractAddress;
   const fromLocal = localStorage.getItem(ADDRESS_KEY);
-  return validAddress(fromBuild) ? fromBuild : validAddress(fromLocal) ? fromLocal : '';
+  return validAddress(fromLocal) ? fromLocal : validAddress(fromBuild) ? fromBuild : '';
 }
 export function saveAddress(address) {
   if (!validAddress(address)) throw new Error('Enter a valid deployed contract address.');
@@ -32,6 +34,23 @@ export function pendingAction() {
 }
 export function rememberPending(action) { localStorage.setItem(PENDING_KEY, JSON.stringify(action)); }
 export function forgetPending() { localStorage.removeItem(PENDING_KEY); }
+export function savedRoundTx(address, sessionId, roundIndex) {
+  try {
+    const records = JSON.parse(localStorage.getItem(ROUND_TX_KEY) || '{}');
+    const hash = records[`${address.toLowerCase()}:${sessionId}:${roundIndex}`];
+    return /^0x[\da-fA-F]{64}$/.test(hash || '') ? hash : '';
+  } catch { return ''; }
+}
+export function saveRoundTx(address, sessionId, roundIndex, hash) {
+  if (!validAddress(address) || !validSessionId(sessionId) || !Number.isInteger(roundIndex)
+      || roundIndex < 0 || roundIndex >= MISSION.rounds.length || !/^0x[\da-fA-F]{64}$/.test(hash || '')) {
+    throw new Error('The finalized round transaction could not be recorded.');
+  }
+  let records = {};
+  try { records = JSON.parse(localStorage.getItem(ROUND_TX_KEY) || '{}') || {}; } catch { /* Replace invalid local cache. */ }
+  records[`${address.toLowerCase()}:${sessionId}:${roundIndex}`] = hash;
+  localStorage.setItem(ROUND_TX_KEY, JSON.stringify(records));
+}
 
 export function getProvider() {
   return window.ethereum || null;

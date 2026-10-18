@@ -7,8 +7,33 @@ const contractFile = new URL('../contracts/lastlight.py', import.meta.url);
 const webFile = new URL('../web/src/generated/mission.json', import.meta.url);
 const metadataFile = new URL('../web/src/generated/mission-hash.json', import.meta.url);
 const scenario = JSON.parse(fs.readFileSync(contentFile, 'utf8'));
-if (scenario.rulesVersion !== 'lastlight-1' || scenario.rounds.length !== 3) throw new Error('Unexpected mission content');
-for (const round of scenario.rounds) if (round.criteria.length !== 3) throw new Error('Every round needs three criteria');
+if (scenario.rulesVersion !== 'lastlight-2' || scenario.rounds.length !== 3) throw new Error('Unexpected mission content');
+if (!scenario.rounds[0].criterion?.id || !scenario.rounds[0].criterion?.text) throw new Error('The intake round needs one narrow criterion');
+for (const round of scenario.rounds.slice(1)) {
+  if (!round.branches || Object.values(round.branches).some(branch => !branch.criterion?.id || !branch.criterion?.text)) {
+    throw new Error(`Every ${round.id} branch needs one narrow criterion`);
+  }
+}
+for (const branch of Object.values(scenario.rounds[1].branches)) {
+  if (!branch.branchOnOutcome || !['MET', 'NOT_MET', 'INSUFFICIENT_EVIDENCE'].every(key => branch.branchOnOutcome[key])) {
+    throw new Error('Every coolant verdict must choose a deterministic communications branch');
+  }
+}
+for (const branch of Object.values(scenario.rounds[2].branches)) {
+  if (!branch.criterion?.id || !branch.criterion?.text) throw new Error('Every communications branch needs one criterion');
+}
+const verdicts = ['MET', 'NOT_MET', 'INSUFFICIENT_EVIDENCE'];
+if (!verdicts.every(verdict => scenario.outcomes[verdict])) throw new Error('Every allowed verdict needs fixed deterministic effects');
+if (!verdicts.every(verdict => scenario.rounds[0].branches[verdict])) throw new Error('Every intake verdict must choose a coolant branch');
+for (const branchId of Object.values(scenario.rounds[0].branches)) {
+  if (!scenario.rounds[1].branches[branchId]) throw new Error(`Unknown coolant branch ${branchId}`);
+}
+for (const branch of Object.values(scenario.rounds[1].branches)) {
+  if (!verdicts.every(verdict => branch.branchOnOutcome[verdict])) throw new Error('Every coolant verdict must choose a communications branch');
+  for (const branchId of Object.values(branch.branchOnOutcome)) {
+    if (!scenario.rounds[2].branches[branchId]) throw new Error(`Unknown communications branch ${branchId}`);
+  }
+}
 const canonical = JSON.stringify(scenario);
 const hash = crypto.createHash('sha256').update(canonical).digest('hex');
 const template = fs.readFileSync(templateFile, 'utf8');

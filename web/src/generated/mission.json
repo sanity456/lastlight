@@ -1,5 +1,5 @@
 {
-  "rulesVersion": "lastlight-1",
+  "rulesVersion": "lastlight-2",
   "missionId": "kestrel-01",
   "initial": {
     "oxygen": 60,
@@ -9,88 +9,150 @@
   "oxygenCost": 12,
   "limits": {
     "minPlanBytes": 40,
-    "maxPlanBytes": 1200
+    "maxPlanBytes": 1200,
+    "maxQuoteChars": 200
   },
-  "adjustments": {
-    "SUCCESS": {
-      "oxygen": 8,
-      "power": 3,
+  "outcomes": {
+    "MET": {
+      "oxygen": 5,
+      "power": 2,
       "hull": 0
     },
-    "PARTIAL": {
-      "oxygen": 0,
-      "power": 0,
-      "hull": -8
+    "NOT_MET": {
+      "oxygen": -10,
+      "power": -5,
+      "hull": -14
     },
-    "FAIL": {
-      "oxygen": -12,
-      "power": -4,
-      "hull": -20
+    "INSUFFICIENT_EVIDENCE": {
+      "oxygen": -6,
+      "power": -3,
+      "hull": -6
     }
+  },
+  "reasonCodes": {
+    "ACTION_PRESENT": "The plan states the required action in a workable way.",
+    "ACTION_CONTRADICTED": "The plan states an action that conflicts with the required action.",
+    "ORDER_UNSAFE": "The plan puts a required action in an unsafe order.",
+    "ACTION_MISSING": "The plan does not provide evidence for the required action.",
+    "AMBIGUOUS": "The plan is too unclear to establish whether the action is proposed."
   },
   "rounds": [
     {
       "id": "intake",
       "sector": "Life support",
       "title": "A station running out of breath.",
-      "summary": "A debris strike has jammed the oxygen intake. The reserve supply is keeping the crew alive. Restore the intake without venting the remaining air.",
-      "facts": "The blockage is reachable after the intake is isolated. A manual handwheel controls the intake. The pressure gauge works. The reserve oxygen supply remains available during the repair.",
+      "summary": "A debris strike jammed the oxygen intake. The reserve supply is keeping the crew alive while you work.",
+      "facts": "The intake can be isolated before the blockage is cleared. The toolkit reaches the blockage. The manual handwheel restores flow. The reserve oxygen supply can stay active during the repair.",
       "equipment": [
+        "Intake isolation switch",
         "Toolkit",
         "Manual handwheel",
-        "Isolation switch",
         "Pressure gauge"
       ],
-      "constraints": "Use only the stated equipment and ordinary actions. Do not vent the station, disable reserve oxygen, invent additional equipment, or assume automatic repairs.",
-      "criteria": [
-        "Isolate the intake before working on it.",
-        "Clear the obstruction and operate the manual handwheel.",
-        "Check pressure before restoring normal flow."
-      ],
+      "constraints": "Keep reserve oxygen running. Do not claim the repair has already happened. Use only the stated equipment and ordinary actions.",
+      "criterion": {
+        "id": "isolate-before-clear",
+        "text": "Isolate the oxygen intake before clearing the blockage."
+      },
       "powerCost": 8,
-      "example": "I isolate the jammed intake while leaving reserve oxygen running. I clear the obstruction with the toolkit and turn the manual handwheel to reopen the intake. I check the pressure gauge before restoring normal flow."
+      "branches": {
+        "MET": "steady_flow",
+        "NOT_MET": "pressure_alarm",
+        "INSUFFICIENT_EVIDENCE": "pressure_alarm"
+      }
     },
     {
       "id": "coolant",
       "sector": "Engineering",
-      "title": "Keep the core from overheating.",
-      "summary": "A damaged branch in the coolant loop is leaking. Repair the branch while the reserve loop keeps the station core stable.",
-      "facts": "The damaged branch has a working isolation valve. The reserve loop is separate and must remain on. The supplied patch kit can seal this specific leak when the branch is isolated. Pressure and temperature monitors work.",
-      "equipment": [
-        "Isolation valve",
-        "Patch kit",
-        "Restart control",
-        "Pressure / temperature monitors"
-      ],
-      "constraints": "Use only the stated equipment and ordinary actions. Keep the reserve loop active. Do not patch the branch while it is pressurized or invent replacement components.",
-      "criteria": [
-        "Isolate the damaged branch while keeping the reserve loop active.",
-        "Seal the isolated leak using the patch kit.",
-        "Restart gradually while checking pressure and temperature."
-      ],
-      "powerCost": 12,
-      "example": "I leave the reserve loop running and isolate the damaged branch with its valve. Once the branch is isolated, I seal the leak with the patch kit. I restart the repaired branch gradually while watching both pressure and temperature."
+      "branches": {
+        "steady_flow": {
+          "id": "coolant-steady-flow",
+          "title": "The repair locker is still powered.",
+          "summary": "The stable intake leaves enough reserve power to reach the coolant repair locker. A separate reserve loop is keeping the core cool.",
+          "facts": "The damaged coolant branch has an isolation valve. The reserve loop is separate and must remain active. A patch kit can seal the leak after isolation.",
+          "equipment": [
+            "Branch isolation valve",
+            "Patch kit",
+            "Reserve coolant loop",
+            "Pressure monitor"
+          ],
+          "constraints": "Keep the reserve loop active and isolate the damaged branch before patching it. Use only the listed equipment.",
+          "criterion": {
+            "id": "reserve-loop",
+            "text": "Keep the reserve coolant loop active while isolating the damaged branch."
+          },
+          "powerCost": 12,
+          "branchOnOutcome": {
+            "MET": "relay_ready",
+            "NOT_MET": "relay_manual",
+            "INSUFFICIENT_EVIDENCE": "relay_manual"
+          }
+        },
+        "pressure_alarm": {
+          "id": "coolant-pressure-alarm",
+          "title": "A pressure alarm blocks the repair locker.",
+          "summary": "The intake remains unstable and the powered locker is inaccessible. A manual clamp and the separate reserve loop are available at the service hatch.",
+          "facts": "The coolant leak is upstream of the service hatch. A manual clamp can stop the leak before flow is rerouted. The reserve loop is separate and must remain active.",
+          "equipment": [
+            "Manual clamp",
+            "Reserve coolant loop",
+            "Pressure monitor"
+          ],
+          "constraints": "Stop the leak with the manual clamp before rerouting coolant. Keep the reserve loop active. Do not claim access to the locked patch kit.",
+          "criterion": {
+            "id": "manual-clamp",
+            "text": "Stop the coolant leak with the manual clamp before rerouting flow."
+          },
+          "powerCost": 9,
+          "branchOnOutcome": {
+            "MET": "relay_ready",
+            "NOT_MET": "relay_manual",
+            "INSUFFICIENT_EVIDENCE": "relay_manual"
+          }
+        }
+      }
     },
     {
       "id": "beacon",
       "sector": "Communications",
-      "title": "Make sure someone hears you.",
-      "summary": "The rescue beacon has lost its antenna feed. Restore a safe connection and transmit a complete distress packet before the crew's reserves fall further.",
-      "facts": "The beacon and antenna work; only the main connecting cable is damaged. An intact backup cable is available. A switch can isolate the damaged feed. The navigation display provides station ID KESTREL and its current coordinates. The receiver can check for acknowledgement.",
-      "equipment": [
-        "Feed isolation switch",
-        "Backup cable",
-        "Navigation display",
-        "Beacon / receiver"
-      ],
-      "constraints": "Use only the stated equipment and ordinary actions. Isolate the damaged feed before rerouting. Use the coordinates from the navigation display rather than inventing them. Do not claim rescue has already happened.",
-      "criteria": [
-        "Isolate the damaged feed before rerouting.",
-        "Connect the beacon to the antenna using the intact backup cable.",
-        "Transmit station ID and displayed coordinates, then check for acknowledgement."
-      ],
-      "powerCost": 10,
-      "example": "I isolate the damaged feed and connect the beacon to the antenna using the intact backup cable. I read KESTREL's current coordinates from the navigation display, transmit them with the station ID in a distress packet, and check the receiver for acknowledgement."
+      "branches": {
+        "relay_ready": {
+          "id": "beacon-powered-relay",
+          "title": "The main relay still has power.",
+          "summary": "The coolant repair preserved power to the main communications relay. The antenna feed is damaged, but the backup cable is intact.",
+          "facts": "A switch can isolate the damaged feed. The intact backup cable can connect the beacon to the antenna. The navigation display contains KESTREL's station ID and current coordinates. The beacon can send a packet and the receiver can report an acknowledgement.",
+          "equipment": [
+            "Feed isolation switch",
+            "Backup cable",
+            "Navigation display",
+            "Beacon / receiver"
+          ],
+          "constraints": "Use the backup cable and the coordinates shown on the navigation display. Do not invent coordinates or claim rescue has already arrived.",
+          "criterion": {
+            "id": "acknowledged-distress",
+            "text": "Send a distress packet with the displayed coordinates and check the receiver for an acknowledgement."
+          },
+          "powerCost": 10
+        },
+        "relay_manual": {
+          "id": "beacon-emergency-transmitter",
+          "title": "The relay has dropped to emergency power.",
+          "summary": "The earlier coolant outcome left the main relay unavailable. The battery powered emergency transmitter can still send one short signal through the backup cable.",
+          "facts": "The damaged main feed must be isolated before connecting the backup cable. The emergency transmitter sends one short packet. The navigation display contains KESTREL's current coordinates.",
+          "equipment": [
+            "Main feed isolation switch",
+            "Backup cable",
+            "Battery powered emergency transmitter",
+            "Navigation display"
+          ],
+          "constraints": "Isolate the damaged main feed before connecting the backup cable. Use the displayed coordinates. Do not claim rescue has already arrived.",
+          "criterion": {
+            "id": "emergency-distress-feed",
+            "text": "Send a distress packet through the backup cable after isolating the damaged main feed."
+          },
+          "powerCost": 7
+        }
+      }
     }
   ]
 }

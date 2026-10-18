@@ -1,0 +1,11 @@
+.branch-callout{display:grid;gap:8px;margin:18px 0;padding:17px 19px;border:1px solid #83c8825c;border-left:3px solid #b9ef83;border-radius:7px;background:#b1ed7810;color:#d7ebd5;line-height:1.55}
+.branch-callout strong{font-size:14px;font-weight:600}
+.judged-criterion{color:#d7ebdf;line-height:1.65}
+.judgment-reason{color:#91aaa3;font-size:13px;line-height:1.6}
+.evidence-quote{margin-top:18px;padding:16px 18px;border-radius:7px;background:#c6f4870b;border:1px solid #bce88933}
+.evidence-quote blockquote{margin:9px 0 0;border-left:2px solid #c5f58c;padding-left:13px;color:#d5f5bf;line-height:1.65}
+.full-plan{margin-top:14px;color:#a8bfba;font-size:12px}
+.full-plan summary{cursor:pointer;color:#b9e78f}
+.full-plan blockquote{margin:12px 0 0;border-left:2px solid #678777;padding-left:13px;line-height:1.65}
+.band.not_met{background:#e3807b22;color:#e99b91}
+.band.insufficient_evidence{background:#e6bd7722;color:#e6bd77}

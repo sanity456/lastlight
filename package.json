@@ -9,6 +9,7 @@
     "check:content": "node scripts/generate.mjs --check",
     "dev": "vite --host 127.0.0.1 --port 4290",
     "build": "npm run check:content && vite build",
+    "verify:proof": "node scripts/verify-proof.mjs",
     "test": "npm run test:contract",
     "test:contract": "node scripts/run-contract-tests.mjs"
   },
