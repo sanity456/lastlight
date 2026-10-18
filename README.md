@@ -2,7 +2,7 @@
 
 LastLight is a cooperative, three-turn fictional survival game. In v2, each turn gives GenLayer validators one narrow criterion to judge against a player's public plan. The agreed result changes fixed resources and selects a different later emergency with different equipment.
 
-The existing public site and deployed address are the earlier v1 build. LastLight v2 has been implemented locally and is awaiting a new user-signed Studionet deployment and live proof. Do not point the v2 frontend at the old v1 contract; its rules hash must match the v2 mission.
+LastLight v2 is deployed on Studionet and has finalized public proof for two solo outcomes. Its public preview is [lastlight-3ymz2at6g-sanity3.vercel.app](https://lastlight-3ymz2at6g-sanity3.vercel.app/). The older production site and contract remain the v1 build; use the v2 contract address and matching mission hash below when reviewing v2.
 
 ## What v2 adds
 
@@ -62,7 +62,7 @@ Current v1 deployment: `0xD5682Ee05Fa8E86fd462b2c2fCB1c7d4e716B8db` on chain 619
 
 V2 mission hash: `c67e02a7c9c5e43a474f16d1559b73ca7a59c1cf9622dab014fdb5e135b3fd74`. All game writes attach 0 GEN; wallet network fees may still apply. A human reviews and signs every wallet transaction.
 
-V2 Studionet deployment: `0x8C8779A657BDb2c8c6179d6f47d63A852801919a` ([official explorer](https://explorer-studio.genlayer.com/address/0x8C8779A657BDb2c8c6179d6f47d63A852801919a)). The live test suite has a positive solo rescue and a second solo case that includes an unsafe-order prompt injection and reaches the emergency-transmitter ending. Their finalized results and transaction hashes are recorded in `deploy/proof.json`. The proof verifier checks the pinned public contract source against the local file, all transaction finality, deployed configuration, session state, round verdicts, quotes, and branch identifiers. The app uses the published round hashes to show official explorer links to reviewers without a wallet. The current case set does not include a duo test. The Vercel production URL still points at the earlier v1 frontend until a v2 frontend preview is published.
+V2 Studionet deployment: `0x8C8779A657BDb2c8c6179d6f47d63A852801919a` ([official explorer](https://explorer-studio.genlayer.com/address/0x8C8779A657BDb2c8c6179d6f47d63A852801919a)). The live proof contains a positive solo rescue and a second solo case with an unsafe-order prompt injection that reaches the emergency-transmitter ending. Their finalized results and transaction hashes are recorded in `deploy/proof.json`. The proof verifier checks the pinned public contract source against the local file, transaction finality, deployed configuration, session state, round verdicts, quotes, and branch identifiers. Open a [completed rescue case](https://lastlight-3ymz2at6g-sanity3.vercel.app/?s=38164c75a7ec63f0fc0a125d4ebe75b0) or [alternate-path case](https://lastlight-3ymz2at6g-sanity3.vercel.app/?s=4bf72130a930477a9e1fc94ac0d7805e) in the preview and select **Verify contract** to inspect the public mission record without connecting a wallet. The current live case set does not include a duo test. Vercel production still serves the earlier v1 frontend; v2 is available on the public preview linked above.
 
 ## Reviewer material
 

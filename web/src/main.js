@@ -10,6 +10,9 @@ import {
 
 const app = document.querySelector('#app');
 const query = new URLSearchParams(location.search);
+let refreshGeneration = 0;
+let sessionPageGeneration = 0;
+let sessionPageRequest = 0;
 const state = {
   account: '', contract: configuredAddress(), verified: false,
   sessionId: validSessionId(query.get('s')) ? query.get('s') : '',
@@ -141,54 +144,83 @@ function render() {
 
 function message(value, kind = 'notice') { state.error = kind === 'error' ? value : ''; state.notice = kind === 'notice' ? value : ''; render(); }
 
-async function loadSessionPage(reset = false) {
-  if (!state.account) {
-    state.sessions = [];
-    state.sessionsCursor = 0n;
-    state.sessionsHasMore = false;
-    return;
-  }
-  const cursor = reset ? 0n : state.sessionsCursor;
-  const page = await read(state.contract, 'list_sessions', [state.account, cursor, 20n], state.account);
+async function fetchSessionPage(contract, account, cursor = 0n) {
+  if (!account) return { items: [], cursor: 0n, hasMore: false };
+  const page = await read(contract, 'list_sessions', [account, cursor, 20n], account);
   const items = Array.isArray(page?.items) ? page.items : [];
   const nextCursor = BigInt(page?.next_cursor ?? cursor + BigInt(items.length));
   if (nextCursor < cursor || (page?.has_more && nextCursor === cursor)) {
     throw new Error('The mission list returned an invalid pagination cursor.');
   }
+  return { items, cursor: nextCursor, hasMore: Boolean(page?.has_more) };
+}
+
+async function loadSessionPage(reset = false) {
+  if (reset) sessionPageGeneration++;
+  const generation = sessionPageGeneration;
+  const request = ++sessionPageRequest;
+  const contract = state.contract;
+  const account = state.account;
+  const cursor = reset ? 0n : state.sessionsCursor;
+  const page = await fetchSessionPage(contract, account, cursor);
+  if (generation !== sessionPageGeneration || request !== sessionPageRequest
+    || contract !== state.contract || account !== state.account) return;
   if (reset) {
-    state.sessions = items;
+    state.sessions = page.items;
   } else {
     const existing = new Set(state.sessions.map(session => session.id));
-    state.sessions.push(...items.filter(session => !existing.has(session.id)));
+    state.sessions.push(...page.items.filter(session => !existing.has(session.id)));
   }
-  state.sessionsCursor = nextCursor;
-  state.sessionsHasMore = Boolean(page?.has_more);
+  state.sessionsCursor = page.cursor;
+  state.sessionsHasMore = page.hasMore;
 }
 
 async function refresh() {
-  if (!validAddress(state.contract)) { state.verified = false; render(); return; }
+  const generation = ++refreshGeneration;
+  sessionPageGeneration++;
+  const contract = state.contract;
+  const account = state.account;
+  const sessionId = state.sessionId;
+  const isCurrent = () => generation === refreshGeneration
+    && contract === state.contract
+    && account === state.account
+    && sessionId === state.sessionId;
+  if (!validAddress(contract)) { state.verified = false; render(); return; }
   try {
-    await verifyContract(state.contract, state.account || undefined);
-    state.verified = true;
-    state.sessionError = '';
-    if (state.sessionId) {
+    await verifyContract(contract, account || undefined);
+    if (!isCurrent()) return;
+    let session = null;
+    let rounds = [];
+    let sessionError = '';
+    if (sessionId) {
       try {
-        state.session = await read(state.contract, 'get_session', [state.sessionId], state.account || undefined);
-        state.rounds = [];
-        for (let i = 0; i < Math.min(3, Number(state.session.next_round_index)); i++) state.rounds.push(await read(state.contract, 'get_round', [state.sessionId, BigInt(i)], state.account || undefined));
+        session = await read(contract, 'get_session', [sessionId], account || undefined);
+        for (let i = 0; i < Math.min(3, Number(session.next_round_index)); i++) {
+          rounds.push(await read(contract, 'get_round', [sessionId, BigInt(i)], account || undefined));
+        }
       } catch (error) {
-        state.session = null;
-        state.rounds = [];
-        state.sessionError = `Could not load mission ${state.sessionId}. Check the ID and contract address, then retry.`;
+        session = null;
+        rounds = [];
+        sessionError = `Could not load mission ${sessionId}. Check the ID and contract address, then retry.`;
       }
     }
-    await loadSessionPage(true);
+    const page = await fetchSessionPage(contract, account, 0n);
+    if (!isCurrent()) return;
+    sessionPageGeneration++;
+    state.verified = true;
+    state.session = session;
+    state.rounds = rounds;
+    state.sessionError = sessionError;
+    state.sessions = page.items;
+    state.sessionsCursor = page.cursor;
+    state.sessionsHasMore = page.hasMore;
     state.error = '';
   } catch (error) {
+    if (!isCurrent()) return;
     state.verified = false;
     state.error = safeError(error);
   }
-  render();
+  if (isCurrent()) render();
 }
 
 async function connect() {

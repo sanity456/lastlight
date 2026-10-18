@@ -1,6 +1,6 @@
 # LastLight v2 reviewer demo (about 2 minutes)
 
-The script is ready to record after the v2 contract and frontend have live, finalized proof. Use the linked public transaction records; do not narrate mocked responses as live consensus.
+The v2 contract and public preview are live, and the two solo proof cases have finalized. Use the linked public transaction records; do not narrate mocked responses as live consensus.
 
 **0:00–0:15 — The product.** Open the public LastLight page. Point out Studionet chain 61999, the rules version and hash, and the wallet-free mission log. Explain that this is a fictional survival game with no prize or escrow.
 
